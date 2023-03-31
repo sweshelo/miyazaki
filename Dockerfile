@@ -8,9 +8,6 @@ WORKDIR /app
 COPY src/package*.json ./
 RUN npm install
 
-# アプリケーションのソースコードをコピー
-COPY ./src .
-
 # ポート番号を指定
 EXPOSE 3000
 
