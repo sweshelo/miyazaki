@@ -29,6 +29,7 @@ const ngSitesList = [
   'https://dic.pixiv',
   'https://ototoy.jp',
   'https://mora.jp',
+  'https://dic.nicovideo.jp/', // SSLのエラーが出る
 ]
 
 // Suggest Word
@@ -47,6 +48,7 @@ const suggest = async(message) => {
     ]
   })
   const pattern = /「(.*?)」/g;
+  console.log(response.data.choices[0].message.content.trim())
   const matches = response.data.choices[0].message.content.trim().match(pattern)?.map(match => match.slice(1, -1)).join(' ');
   return matches
 }
@@ -54,7 +56,13 @@ const suggest = async(message) => {
 // Investigate
 const investigate = async(query) => {
   try{
-    const googleRequest = await fetch(`https://www.google.com/search?q=${query}`, {headers:{'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/111.0'}})
+    const googleRequest = await fetch(
+      `https://www.google.com/search?q=${query}`,
+      {
+        agent: httpsAgent,
+        headers:{'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/111.0'},
+      }
+    )
     const html = await googleRequest.text()
     const dom = new JSDOM(html, 'text/html')
     const doc = dom.window.document
@@ -113,7 +121,7 @@ const investigate = async(query) => {
             },
             {
               role: 'user',
-              content: content
+              content: content.slice(0, 1500)
             }
           ]
         })
@@ -154,6 +162,29 @@ app.post('/api/generate', async(req, res) => {
     messages: req.body.messages
   })
   res.send(result.data.choices[0].message.content.trim())
+})
+
+app.post('/api/question', async(req, res) => {
+  try{
+    const suggested = await suggest(req.body.question)
+    const investigated = suggested ? await investigate(suggested) : []
+    const generate = await openai.createChatCompletion({
+      model: 'gpt-3.5-turbo-0301',
+      messages: [{
+        role: 'user',
+        content: `与えられた質問に、列挙された情報を元に回答しなさい。検索結果の内容についても言及し、関連性を分析しなさい。
+- 現在日時: ${new Date()}
+- 検索クエリ: ${suggested}
+- 検索結果: ${investigated.map(e => e.source + e.info.join('\n')).join('\n')}
+- 質問本文: ${req.body.question}
+`
+      }]
+    })
+    res.send(generate.data.choices[0].message.content.trim())
+  }catch(e){
+    console.error(e)
+    res.send('申し訳ありません。内部エラーが発生しました。情報源のサイトにセキュリティ上の問題があるため、正常にページを読み込むことができませんでした。')
+  }
 })
 
 app.listen(port, () => {
