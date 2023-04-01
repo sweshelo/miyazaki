@@ -20,6 +20,17 @@ const config = new Configuration({
 });
 const openai = new OpenAIApi(config);
 
+// NGリスト - スクレイピングしても有用な情報を得られないページをリスト化している
+const ngSitesList = [
+  'https://twitter.com',
+  'https://mobile.twitter.com',
+  'https://www.youtube.com',
+  'https://youtube.com',
+  'https://dic.pixiv',
+  'https://ototoy.jp',
+  'https://mora.jp',
+]
+
 // Suggest Word
 const suggest = async(message) => {
   const response = await openai.createChatCompletion({
@@ -62,13 +73,17 @@ const investigate = async(query) => {
 
     // 検索結果(サイト)
     const siteUrls = [...doc.querySelector('#search').querySelectorAll('.sATSHe, .kvH3mc, .BToiNc, .UK95Uc')].map(e => e.querySelector('.UK95Uc')?.querySelector('a').href).filter(
-      f => f?.length > 0 && !f.startsWith('https://twitter.com') && !f.startsWith('https://www.youtube') && !f.startsWith('https://dic.pixiv') && !f.endsWith('.pdf')
-    ).slice(0, 3)
+      f => f?.length > 0 && !f.endsWith('.pdf')
+    )
 
-    console.log('Pass:', siteUrls)
+    // NGリストを反映
+    const filteredSiteUrls = siteUrls.filter((site) => ngSitesList.map(element => site.startsWith(element)).every(startsWithElement => !startsWithElement)).slice(0, 3)
+
+    console.log('Pass:', filteredSiteUrls, siteUrls)
+    console.log('次に渡されるWeb記事から、重要であると考えられる情報を順番に5つ箇条書きで示せ。' + (query ? `なお、ユーザは記事の検索にあたって『${query}』と検索している。` : ''))
 
     // 要約させる
-    const promisses = siteUrls.map((url) => {
+    const promisses = filteredSiteUrls.map((url) => {
       return fetch(url, {
         agent: httpsAgent,
         headers: {
@@ -77,8 +92,16 @@ const investigate = async(query) => {
       }).then(e => e.text()).then((html) => {
         const _dom = new JSDOM(html, 'text/html')
         const { document } = _dom.window
-        const article = document.querySelector('main, article, #main, #article, #content, .main, .article, .content')
-        if(!article) return null
+        const article = document.querySelector('main, article, #main, #article, #content, #contents, .main, .article, .content')
+        if(!article){
+          const regex = /^https?:\/\/([^/?#]+).*$/;
+          const match = url.match(regex);
+          if (match && match.length > 1) {
+            ngSitesList.push(`https://${match[1]}`)
+          }
+          console.log(ngSitesList)
+          return null
+        }
         const content = [...article.querySelectorAll('p')]?.map(e => e.textContent).join('')
         if (content.trim().length <= 5) return null
         return openai.createChatCompletion({
@@ -86,7 +109,7 @@ const investigate = async(query) => {
           messages: [
             {
               role: 'system',
-              content: '次に渡されるWeb記事から、重要であると考えられる情報を順番に5つ箇条書きで示せ。'
+              content: '次に渡されるWeb記事から、重要であると考えられる情報を順番に5つ箇条書きで示せ。' + (query ? `なお、ユーザは記事の検索にあたって『${query}』と検索している。` : '')
             },
             {
               role: 'user',
@@ -100,7 +123,7 @@ const investigate = async(query) => {
     const list = results.map((r, index) => {
       if (!r || !r.hasOwnProperty('data')) return null
       return{
-        'source': siteUrls[index],
+        'source': filteredSiteUrls[index],
         'info': r.data?.choices[0].message.content.split('\n')
       }
     }).filter(e => !!e)
