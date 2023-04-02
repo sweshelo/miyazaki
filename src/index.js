@@ -177,6 +177,7 @@ app.post('/api/question', async(req, res) => {
 - 検索クエリ: ${suggested}
 - 検索結果: ${investigated.map(e => e.source + e.info.join('\n')).join('\n')}
 - 質問本文: ${req.body.question}
+- 回答:
 `
       }]
     })

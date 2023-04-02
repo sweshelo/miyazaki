@@ -8,6 +8,7 @@
     "openai": "^3.2.1"
   },
   "scripts": {
-    "start": "nodemon index.js"
+    "start": "nodemon index.js",
+    "prod": "node index.js"
   }
 }
