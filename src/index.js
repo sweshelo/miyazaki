@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const https = require('https');
+const fs = require('fs');
 const { JSDOM } = require('jsdom')
 const { Configuration, OpenAIApi } = require('openai');
 const app = express();
@@ -15,6 +16,9 @@ const httpsAgent = new https.Agent({
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cors());
+
+const logFilePath = 'log.json';
+fs.writeFileSync(logFilePath, '');
 
 const port = process.env.PORT || 3000;
 const config = new Configuration({
@@ -33,6 +37,30 @@ const ngSitesList = [
   'https://mora.jp',
   'https://dic.nicovideo.jp/', // SSLのエラーが出る
 ]
+
+// 「yyyymmdd」形式の日付文字列に変換する関数
+function now() {
+
+  const date = new Date();
+
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+
+  const yyyy = y.toString();
+  const mm = ("00" + m).slice(-2);
+  const dd = ("00" + d).slice(-2);
+
+  const h = date.getHours();
+  const min = date.getMinutes();
+  const s = date.getSeconds();
+
+  const hh = ("00" + h).slice(-2);
+  const mi = ("00" + min).slice(-2);
+  const ss = ("00" + s).slice(-2);
+
+  return yyyy + '/' + mm + '/' + dd + ' ' + hh + ':' + mi + ':' + ss;
+}
 
 // Suggest Word
 const suggest = async(message) => {
@@ -102,7 +130,7 @@ const investigate = async(query) => {
       }).then(e => e.text()).then((html) => {
         const _dom = new JSDOM(html, 'text/html')
         const { document } = _dom.window
-        const article = document.querySelector('main, article, #main, #article, #content, #contents, .main, .article, .content')
+        const article = document.querySelector('main, article, #main, #article, #content, #contents, .main, .article, .content, #cmsBody')
         if(!article){
           const regex = /^https?:\/\/([^/?#]+).*$/;
           const match = url.match(regex);
@@ -184,9 +212,27 @@ app.post('/api/question', async(req, res) => {
       }]
     })
     res.send(generate.data.choices[0].message.content.trim())
+
+    // log
+    const logData = {
+      datetime: now(),
+      address: req.ip,
+      question: req.body.question,
+      suggested,
+      investigated,
+      answer: generate.data.choices[0].message.content.trim()
+    }
+    fs.appendFileSync(logFilePath, JSON.stringify(logData) + '\n');
   }catch(e){
     console.error(e)
     res.send('申し訳ありません。内部エラーが発生しました。情報源のサイトにセキュリティ上の問題があるため、正常にページを読み込むことができませんでした。')
+    fs.appendFileSync(logFilePath, JSON.stringify({
+      datetime: now(),
+      address: req.ip,
+      question: req.body.question,
+      suggested,
+      investigated
+    }) + '\n');
   }
 })
 
